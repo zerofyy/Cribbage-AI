@@ -2,6 +2,7 @@ from torch import nn
 
 from .base_discard_net import BaseDiscardNet
 
+
 class DiscardNetV1(BaseDiscardNet):
     """
     Neural network for discarding cards.

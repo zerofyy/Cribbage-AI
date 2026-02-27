@@ -1,45 +1,5 @@
-# Project Structure
-```
-❌ | main.py
-❌ | README.md
-✅ | TODO.md
-❌ | requirements.txt
-⬛ |
-🔄 | utils/
-⬛ |-|
-✅ |-| assets/ 
-✅ |-|-| __init__.py
-✅ |-|-| display.py
-⬛ |-|
-✅ |-| game/
-✅ |-|-| __init__.py
-✅ |-|-| game.py
-⬛ |-|
-❌ |-| helpers/
-🔄 |-|-| __init__.py
-✅ |-|-| card_deck.py
-✅ |-|-| scoring.py
-✅ |-|-| discard_evaluator.py
-⬛ |-|
-🔄 |-| players/
-✅ |-|-| __init__.py
-✅ |-|-| base_player.py
-✅ |-|-| user_player.py
-✅ |-|-| random_player.py
-❌ |-|-| ...
-⬛ |-|
-❌ |-| simulator/
-❌ |-|-| __init__.py
-❌ |-|-| ...
-⬛ |
-❌ | models/
-❌ |-| ...
-```
-
----
 # TODO
-- Implement early stopping in `DiscardTrainer`.
-- Implement progress printing in `DiscardTrainer`.
+- Implement early stopping in `DiscardTrainer` if needed.
 - Implement different neural network structures and player agents.
 - Beautify scoring info when displayed in the terminal.
 
@@ -72,15 +32,15 @@
 
 ---
 # Latest Changes
-Began implementing neural network agents.
+DiscardEvaluator optimizations, DiscardTrainer fixes, and BaseDiscardNet updates.
 
-- Added `StateEncoder` for encoding game states in a format recognizable for neural networks.
-- Added a `neural_nets` module.
-  - Added a `BaseDiscardNet` from which all discard policy nets will inherit.
-  - Added `DiscardNetV1`.
-  - Added `DiscardTrainer` for training different discard policy nets.
-- Added `DNPRPlayer` that uses the first version of the discard net.
-- Altered `DiscardEvaluator` to return all combinations of card pairs, sorted by their criteria.
-- Updated `requirements.txt`.
-- Minor variable name and docstring changes.
+- `BaseDiscardNet` changes:
+  - Now outputs confidence scores for each of the 15 discard combinations instead of one for each card.
+  - Added a function to process the network's output, returning all discard combinations along with their confidence scores.
+  - Added a function to get the confidence score for a specific discard combination from a processed output.
+- `DiscardTrainer` changes:
+  - Fixed both supervised and unsupervised training.
+  - Added option to change the batch size.
+  - Added logging during training.
+- `DiscardEvaluator` optimizations.
 - Updated TODO.

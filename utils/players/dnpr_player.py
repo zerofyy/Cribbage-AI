@@ -25,7 +25,7 @@ class DNPRPlayer(BasePlayer):
         opponent = state['player1'] if self == state['player2'] else state['player2']
         is_dealer = state['dealer'] == self
 
-        card1, card2, _, _ = self.discard_net.get_discard_action(self.points, opponent.points, is_dealer, self.cards)
+        card1, card2, _ = self.discard_net.get_discard_action(self.points, opponent.points, is_dealer, self.cards)
 
         self.cards.remove(card1)
         self.cards.remove(card2)
