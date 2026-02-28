@@ -6,6 +6,48 @@ from torch import optim
 from utils.neural_nets import BaseDiscardNet
 from utils.helpers import DiscardEvaluator, CardDeck
 
+from multiprocessing import Pool, cpu_count
+
+
+def _get_batch_data(args: dict[str, ...]) -> dict[str, ...]:
+    """
+    Generate input data for a single training batch.
+
+    ------
+
+    Arguments:
+        args: A dictionary containing training info.
+
+    ------
+
+    Returns:
+        A dictionary with the generated training data.
+    """
+
+    play_style = args['play_style']
+    alpha = args['alpha']
+
+    deck = CardDeck(shuffle=True)
+    hand_cards, crib_cards, starter_card = deck.deal_cards(6), deck.deal_cards(2), deck.deal_cards(1)[0]
+    is_dealer = random.choice([True, False])
+    score1, score2 = random.randint(0, 121), random.randint(0, 121)
+
+    best_cards = None
+    if alpha > 0:
+        ranked_pairs = DiscardEvaluator.get_discard_stats(hand_cards, is_dealer)[play_style]
+        best_cards = ranked_pairs[0][0]
+
+    return {
+        'score1': score1,
+        'score2': score2,
+        'is_dealer': is_dealer,
+        'hand_cards': hand_cards,
+        'crib_cards': crib_cards,
+        'starter_card': starter_card,
+        'best_cards': best_cards
+    }
+
+
 
 class DiscardTrainer:
     """ Neural network trainer for the discarding phase. """
@@ -35,7 +77,7 @@ class DiscardTrainer:
     @classmethod
     def train(cls, discard_network: BaseDiscardNet, lr: float, wd: float, epochs: int, batch_size: int = 32,
               early_stop: bool = True, play_style: str = None, alpha: float = 0.0, alpha_decay: float = 0.95,
-              alpha_step: int = 10) -> None:
+              alpha_step: int = 10, num_workers: int = 1) -> None:
         """
         Train the given discard neural network using reinforced supervised or unsupervised learning.
 
@@ -63,6 +105,7 @@ class DiscardTrainer:
             alpha: How reliant the network is on the given play-style initially.
             alpha_decay: By how much to reduce the network's dependency of the given play-style.
             alpha_step: How often to decay alpha in epochs.
+            num_workers: How many cores to use for training.
 
         ------
 
@@ -71,6 +114,12 @@ class DiscardTrainer:
         """
 
         cls._training_logs = ''
+
+        cls._log(
+            f'{discard_network.__class__.__name__} Structure Details:\n'
+            f'{discard_network.net}\n\n'
+        )
+
         cls._log(
             f'{discard_network.__class__.__name__} Training Details:\n'
             f'* Learning Rate: {lr}\n'
@@ -92,62 +141,73 @@ class DiscardTrainer:
         optimizer = optim.AdamW(net.parameters(), lr = lr, weight_decay = wd)
         scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max = epochs, eta_min = 1e-5)
 
-        cls._log('Training...')
+        num_workers = min(cpu_count(), num_workers)
+        if batch_size % num_workers != 0:
+            cls._log(f'Batch size {batch_size} cant be evenly distributed to cores.')
+            batch_size = (batch_size // num_workers) * num_workers
+            cls._log(f'Changed batch size to {batch_size}.')
+
+        cls._log(f'Training with {discard_network.device}...')
         net.train()
-        for epoch in range(1, epochs + 1):
-            total_loss, total_reward, total_reward_norm = 0, 0, 0
 
-            for batch in range(batch_size):
-                deck = CardDeck(shuffle = True)
-                hand_cards, crib_cards, starter_card = deck.deal_cards(6), deck.deal_cards(2), deck.deal_cards(1)[0]
-                is_dealer = random.choice([True, False])
-                score1, score2 = random.randint(0, 121), random.randint(0, 121)
+        with Pool(processes = num_workers) as pool:
+            for epoch in range(1, epochs + 1):
+                total_loss, total_reward, total_reward_norm = 0, 0, 0
 
-                distribution = discard_network.get_distribution_policy(score1, score2, is_dealer, hand_cards)
-                best_combo = max(distribution, key = lambda x: x[2].item())
-                card1, card2, confidence = best_combo[0], best_combo[1], best_combo[2]
+                batch_args = [{'play_style': play_style, 'alpha': alpha} for _ in range(batch_size)]
+                batch_results = pool.map(_get_batch_data, batch_args)
 
-                imitation_loss = 0
-                if alpha > 0:
-                    ranked_pairs = DiscardEvaluator.get_discard_stats(hand_cards, is_dealer)[play_style]
-                    best_pair = ranked_pairs[0][0]
-                    imitation_loss = -discard_network.get_combo_confidence(
-                        distribution, card1 = best_pair[0], card2 = best_combo[1]
-                    )
+                for batch in batch_results:
+                    hand_cards = batch['hand_cards']
+                    crib_cards = batch['crib_cards']
+                    is_dealer = batch['is_dealer']
+                    starter_card = batch['starter_card']
 
-                hand_cards.remove(card1)
-                hand_cards.remove(card2)
-                crib_cards.extend([card1, card2])
-                hand_score = DiscardEvaluator.score_hand(hand_cards, starter_card)
-                crib_score = DiscardEvaluator.score_crib(crib_cards, starter_card)
+                    distribution = discard_network.get_distribution_policy(batch['score1'], batch['score2'],
+                                                                           is_dealer, hand_cards)
+                    best_combo = max(distribution, key=lambda x: x[2].item())
+                    card1, card2, confidence = best_combo[0], best_combo[1], best_combo[2]
 
-                reward = hand_score + crib_score if is_dealer else hand_score - crib_score
-                normalized_reward = (reward - cls.WORST_OUTCOME) / (cls.BEST_OUTCOME - cls.WORST_OUTCOME)
-                rl_loss = -(1 / normalized_reward) * confidence
+                    imitation_loss = 0
+                    if alpha > 0:
+                        best_pair = batch['best_cards']
+                        imitation_loss = -discard_network.get_combo_confidence(
+                            distribution, card1=best_pair[0], card2=best_pair[1]
+                        )
 
-                loss = alpha * imitation_loss + (1 - alpha) * rl_loss
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+                    hand_cards.remove(card1)
+                    hand_cards.remove(card2)
+                    crib_cards.extend([card1, card2])
+                    hand_score = DiscardEvaluator.score_hand(hand_cards, starter_card)
+                    crib_score = DiscardEvaluator.score_crib(crib_cards, starter_card)
 
-                total_loss += loss.item()
-                total_reward += reward
-                total_reward_norm += normalized_reward
+                    reward = hand_score + crib_score if is_dealer else hand_score - crib_score
+                    normalized_reward = (reward - cls.WORST_OUTCOME) / (cls.BEST_OUTCOME - cls.WORST_OUTCOME)
+                    rl_loss = -(1 / normalized_reward) * confidence
 
-            scheduler.step()
+                    loss = alpha * imitation_loss + (1 - alpha) * rl_loss
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
 
-            avg_loss = total_loss / batch_size
-            avg_reward = total_reward / batch_size
-            avg_reward_norm = total_reward_norm / batch_size
+                    total_loss += loss.item()
+                    total_reward += reward
+                    total_reward_norm += normalized_reward
 
-            if epoch % alpha_step == 0 and alpha > 0:
-                alpha = min(alpha - alpha_decay, 0)
+                scheduler.step()
 
-            cls._log(f'* Epoch: {epoch:<{epoch_spaces}}  |'
-                     f'  L: {avg_loss:<4.8f}'
-                     f'  R: {avg_reward:<4.8f}'
-                     f'  RN: {avg_reward_norm:<4.8f}'
-                     f'  A: {alpha}')
+                avg_loss = total_loss / batch_size
+                avg_reward = total_reward / batch_size
+                avg_reward_norm = total_reward_norm / batch_size
+
+                if epoch % alpha_step == 0 and alpha > 0:
+                    alpha = max(alpha - alpha_decay, 0)
+
+                cls._log(f'* Epoch: {epoch:<{epoch_spaces}}  |'
+                         f'  L: {avg_loss:<4.8f}'
+                         f'  R: {avg_reward:<4.8f}'
+                         f'  RN: {avg_reward_norm:<4.8f}'
+                         f'  A: {alpha}')
 
         cls._log('Training finished.')
 

@@ -32,15 +32,8 @@
 
 ---
 # Latest Changes
-DiscardEvaluator optimizations, DiscardTrainer fixes, and BaseDiscardNet updates.
+Minor bug fixes and implementation of multiprocessing.
 
-- `BaseDiscardNet` changes:
-  - Now outputs confidence scores for each of the 15 discard combinations instead of one for each card.
-  - Added a function to process the network's output, returning all discard combinations along with their confidence scores.
-  - Added a function to get the confidence score for a specific discard combination from a processed output.
-- `DiscardTrainer` changes:
-  - Fixed both supervised and unsupervised training.
-  - Added option to change the batch size.
-  - Added logging during training.
-- `DiscardEvaluator` optimizations.
-- Updated TODO.
+- Fixed alpha updates and supervised training bugs in `DiscardTrainer`.
+- Added net structure to training logs.
+- Implemented parallelism for batching while training.
