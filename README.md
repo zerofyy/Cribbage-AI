@@ -219,5 +219,4 @@ The discarding network plays far better than random, but doesn't reach the analy
 <br>
 
 ## Fun Facts
-This project killed us.
-<img wisrc="https://github.com/user-attachments/assets/426b17b9-6d6d-4133-8049-13761dfde99f"/>
+<img src="https://github.com/user-attachments/assets/426b17b9-6d6d-4133-8049-13761dfde99f"/>
