@@ -102,21 +102,18 @@ if __name__ == '__main__':
 
 ### Using the Discard Evaluator
 ```py
-    net = DNT_ShallowSeluWide()
-    net.load_weights('example_weights')
-
-    game = Game(
-        player1 = UserPlayer(),
-        player2 = DNPRPlayer(net),
-        first_dealer = None,
-        wait_after_move = 500,
-        wait_after_info = True,
-        show_opponents_hand = False,
-        visuals = True,
-        measure_statistics = False
+if __name__ == '__main__':
+    # Get discard suggestions for a hand of A♥ 4♣ 10♦ J♠ Q♥ K♣, based on statistical analysis.
+    stats = DiscardEvaluator.get_discard_stats(
+        hand = ['1H', '4C', 'TD', 'JS', 'QH', 'KC'],
+        is_dealer = True
     )
 
-    game.play()
+    for strat, discards in stats.items():
+        print(f'{strat.title()} Strategy:')
+        for cards, score in discards:
+            print(f'  {cards[0]} + {cards[1]}  -->  {score:.2f}')
+        print()
 ```
 
 The `DiscardEvaluator` is a reconstruction of [C. Liam Brown's](https://cliambrown.com/cribbage/) statistical discard analysis algorithm. For a given 6-card hand and dealer status, it examines every possible starter card and every possible crib completion to calculate the expected points of each of the 15 discard options. It supports several play styles:
